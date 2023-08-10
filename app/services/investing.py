@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import List
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,40 +7,74 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Donation, CharityProject
 
 
+async def get_first_unclosed_donation(
+        session: AsyncSession
+) -> Donation | None:
+    donations = await session.execute(select(Donation).where(
+        Donation.fully_invested == 0
+    ))
+    return donations.scalars().first()
+
+
+async def get_all_unclosed_projects(
+        session: AsyncSession
+) -> List[CharityProject] | None:
+    projects = await session.execute(select(CharityProject).where(
+        CharityProject.fully_invested == 0
+    ))
+    return projects.scalars().all()
+
+
+def project_donating(project: CharityProject, donation_amount: int,
+                     session: AsyncSession) -> int:
+    needed_amount = project.full_amount - project.invested_amount
+    if donation_amount >= needed_amount:
+        donation_amount -= needed_amount
+        project.invested_amount = project.full_amount
+        project.fully_invested = True
+        project.close_date = datetime.now()
+    else:
+        project.invested_amount += donation_amount
+        donation_amount = 0
+    session.add(project)
+    return donation_amount
+
+
+def donation_change_invested_amount_closing(
+        donation: Donation,
+        remaining_amount: int,
+        session: AsyncSession
+) -> None:
+    donation.invested_amount = (donation.full_amount -
+                                remaining_amount)
+    if donation.invested_amount == donation.full_amount:
+        donation.fully_invested = True
+        donation.close_date = datetime.now()
+    session.add(donation)
+
+
 async def investing(
         session: AsyncSession
 ):
     while True:
 
-        donations = await session.execute(select(Donation).where(
-            Donation.fully_invested == 0
-        ))
-        donation = donations.scalars().first()
-        if not donation:
+        donation = await get_first_unclosed_donation(session)
+        projects = await get_all_unclosed_projects(session)
+        if not donation or not projects:
             break
-        available_donation = donation.full_amount - donation.invested_amount
-        projects = await session.execute(select(CharityProject).where(
-            CharityProject.fully_invested == 0
-        ))
-        projects = projects.scalars().all()
-        if not projects:
-            break
+        available_donation_amount = (donation.full_amount -
+                                     donation.invested_amount)
         for project in projects:
-            if available_donation == 0:
+            if available_donation_amount == 0:
                 break
-            needed_amount = project.full_amount - project.invested_amount
-            if available_donation >= needed_amount:
-                available_donation -= needed_amount
-                project.invested_amount = project.full_amount
-                project.fully_invested = True
-                project.close_date = datetime.now()
-            else:
-                project.invested_amount += available_donation
-                available_donation = 0
-            session.add(project)
-        donation.invested_amount = donation.full_amount - available_donation
-        if donation.invested_amount == donation.full_amount:
-            donation.fully_invested = True
-            donation.close_date = datetime.now()
-        session.add(donation)
+            available_donation_amount = project_donating(
+                project,
+                available_donation_amount,
+                session
+            )
+        donation_change_invested_amount_closing(
+            donation,
+            available_donation_amount,
+            session
+        )
         await session.commit()
