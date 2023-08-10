@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Optional
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +8,7 @@ from app.models import CharityProject
 
 
 async def check_name_duplicate(
-        project_name: str | None,
+        project_name: Optional[str],
         session: AsyncSession,
 ) -> None:
     project_id = await charity_project_crud.get_project_id_by_name(
