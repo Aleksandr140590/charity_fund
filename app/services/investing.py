@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +9,7 @@ from app.models import Donation, CharityProject
 
 async def get_first_unclosed_donation(
         session: AsyncSession
-) -> Donation | None:
+) -> Optional[Donation]:
     donations = await session.execute(select(Donation).where(
         Donation.fully_invested == 0
     ))
@@ -18,7 +18,7 @@ async def get_first_unclosed_donation(
 
 async def get_all_unclosed_projects(
         session: AsyncSession
-) -> List[CharityProject] | None:
+) -> Optional[List[CharityProject]]:
     projects = await session.execute(select(CharityProject).where(
         CharityProject.fully_invested == 0
     ))
